@@ -7,12 +7,12 @@
 const uint8_t NODE_ID = 1; 
 
 // Credenciales WiFi (reemplazar con las tuyas)
-const char* ssid = "iPhone Anthonny";
-const char* password = "Anthonny1998";
+const char* ssid = "YOURISSD";
+const char* password = "PASSWORD";
 
 // Datos de ThingSpeak
-unsigned long myChannelNumber = 2781726; // Reemplaza con tu número de canal
-const char * myWriteAPIKey = "ZIYZH4FIN4XDJAVC";
+unsigned long myChannelNumber = "CHANNEL NUMBER"; // Reemplaza con tu número de canal
+const char * myWriteAPIKey = "TOKEN";
 
 WiFiClient client;
 
