@@ -1,0 +1,466 @@
+// ENGLISH VERSION
+#include "Arduino.h"
+#include "LoRa_E220.h"
+// Adjust this unique ID for each node: 1, 2, or 3 (Adjust this unique ID for each node: 1, 2, or 3)
+const uint8_t NODE_ID = 1; 
+
+// Pin configuration for ESP32 (Pin configuration for ESP32)
+LoRa_E220 e220ttl(17, 16, &Serial2, 18, 21, 19, UART_BPS_RATE_9600);
+
+// Define the LED pin (Define the LED pin)
+const int ledPin = 23;
+
+// Number of membership sending attempts per member (Number of membership sending attempts per member)
+#define MEMBER_ATTEMPTS 3
+
+// Global variables (Global variables)
+bool isClusterHead = false;   
+bool hasClusterHead = false;  
+int batteryLevel;             
+float probabilityThreshold;
+unsigned long lastClusterHeadTime = 0; 
+unsigned long cooldownTime = 5000;     
+unsigned long lastMemberTime = 0;
+
+// Timing settings (Timing settings)
+unsigned long arbitrationTime = 2000;   // Max. time for arbitration (2s) (Max. time for arbitration (2s))
+unsigned long memberCheckTime = 6000;   // Time to receive members (6s) (Time to receive members (6s))
+
+// Structure to track confirmed members (Structure to track confirmed members)
+bool membersConfirmed[4] = {false, false, false, false}; // Indices 1-3 used (Indices 1-3 used)
+
+void setup() {
+  Serial.begin(9600);
+  delay(1000);
+
+  pinMode(ledPin, OUTPUT);
+
+  if (e220ttl.begin()) {
+    Serial.println("Error initializing E220 module");
+    while (1);
+  }
+  Serial.print("E220 module successfully initialized. Node ID: ");
+  Serial.println(NODE_ID);
+
+  randomSeed(analogRead(0) * NODE_ID);
+}
+
+void loop() {
+  batteryLevel = random(80, 101); 
+  probabilityThreshold = random(90, 96) / 100.0; 
+
+  float probability = batteryLevel / 100.0;
+
+  if (hasClusterHead) {
+    listenForClusterHead();
+  } else {
+    if (millis() - lastClusterHeadTime >= cooldownTime && probability >= probabilityThreshold) {
+      startArbitration(probability);
+    } else {
+      listenForClusterHead();
+    }
+  }
+
+  delay(100); // Short pause (Short pause)
+}
+
+// Start arbitration to become Cluster Head (Start arbitration to become Cluster Head)
+void startArbitration(float probability) {
+  Serial.println("Starting arbitration to become Cluster Head...");
+
+  String msg = "CH request:" + String(NODE_ID) + ":" + String(batteryLevel) + ":" + String(probability);
+  e220ttl.sendMessage(msg);
+
+  unsigned long startTime = millis();
+  bool canBecomeCH = true;
+  uint8_t bestNodeID = NODE_ID;
+  int bestBattery = batteryLevel;
+  float bestProb = probability;
+
+  while (millis() - startTime < arbitrationTime) {
+    ResponseContainer rc = e220ttl.receiveMessage();
+    if (rc.status.code == 1) {
+      String m = rc.data;
+      if (m.startsWith("CH request:")) {
+        int firstColon = m.indexOf(':', 12);
+        int secondColon = m.indexOf(':', firstColon + 1);
+
+        uint8_t otherID = m.substring(12, firstColon).toInt();
+        int otherBattery = m.substring(firstColon + 1, secondColon).toInt();
+        float otherProb = m.substring(secondColon + 1).toFloat();
+
+        // Lower ID wins priority (Lower ID wins priority)
+        if (otherID < bestNodeID) {
+          bestNodeID = otherID;
+          bestBattery = otherBattery;
+          bestProb = otherProb;
+        } else if (otherID == bestNodeID) {
+          // Final tiebreaker 50% (Final tiebreaker 50%)
+          if (otherBattery > bestBattery || (otherBattery == bestBattery && otherProb > bestProb)) {
+            if (random(0,2) == 0) {
+              canBecomeCH = false;
+            }
+          }
+        }
+      } else if (m == "I am the Cluster Head") {
+        // Another node already declared CH, we immediately abandon arbitration (Another node already declared CH, we immediately abandon arbitration)
+        hasClusterHead = true;
+        canBecomeCH = false;
+        Serial.println("Another Cluster Head detected during arbitration. Abandoning arbitration.");
+        break; // Exit while (Exit while)
+      }
+    }
+  }
+
+  if (bestNodeID != NODE_ID) {
+    canBecomeCH = false;
+  }
+
+  if (!canBecomeCH) {
+    Serial.println("I lose arbitration or detect CH before me, entering short cooldown...");
+    lastClusterHeadTime = millis();
+    cooldownTime = random(5000, 10000); 
+    hasClusterHead = false;
+    isClusterHead = false;
+    return;
+  }
+
+  becomeClusterHead(probability);
+}
+
+// Become Cluster Head (Become Cluster Head)
+void becomeClusterHead(float probability) {
+  isClusterHead = true;
+  hasClusterHead = false; 
+  lastClusterHeadTime = millis();
+
+  Serial.println("I am Cluster Head. Informing others...");
+  Serial.print("Battery level (CH): ");
+  Serial.println(batteryLevel);
+  Serial.print("Probability (CH): ");
+  Serial.println(probability);
+  Serial.print("Threshold used: ");
+  Serial.println(probabilityThreshold);
+
+  digitalWrite(ledPin, HIGH);
+  e220ttl.sendMessage("I am the Cluster Head");
+
+  unsigned long startTime = millis();
+  int memberCount = 0; 
+
+  // Reset member confirmed structure (Reset member confirmed structure)
+  for(int i = 0; i < 4; i++) {
+    membersConfirmed[i] = false;
+  }
+
+  while (millis() - startTime < memberCheckTime) {
+    delay(10); // Small pause to process messages (Small pause to process messages)
+    ResponseContainer rc = e220ttl.receiveMessage();
+    if (rc.status.code == 1) {
+      String msg = rc.data;
+      if (msg.startsWith("I am your member:")) {
+        uint8_t memberID = msg.substring(18).toInt();
+        if(memberID >=1 && memberID <=3){
+          if(!membersConfirmed[memberID]){
+            membersConfirmed[memberID] = true;
+            memberCount++;
+            Serial.print("Member confirmed in the cluster. Node ID: ");
+            Serial.println(memberID);
+          }
+          else{
+            Serial.print("Duplicate message from node ");
+            Serial.println(memberID);
+          }
+        }
+        else{
+          Serial.print("Invalid node ID received: ");
+          Serial.println(memberID);
+        }
+      }
+    }
+  }
+
+  digitalWrite(ledPin, LOW);
+  isClusterHead = false;
+  hasClusterHead = false; 
+  lastClusterHeadTime = millis();
+
+  if (memberCount == 0) {
+    Serial.println("No members. Resetting state...");
+    cooldownTime = random(5000, 10000); 
+  } else {
+    // Increase long cooldown to 20-25 seconds (Increase long cooldown to 20-25 seconds)
+    cooldownTime = random(20000, 25000); 
+  }
+}
+
+// Listen for messages from other nodes (when not CH) (Listen for messages from other nodes (when not CH))
+void listenForClusterHead() {
+  ResponseContainer rc = e220ttl.receiveMessage();
+  if (rc.status.code == 1) {
+    String message = rc.data;
+    if (message == "I am the Cluster Head") {
+      hasClusterHead = true;
+      Serial.println("Another node is Cluster Head. I am a member.");
+
+      // Random delay longer before first send, for example between 0 and 1000ms (Random delay longer before first send, for example between 0 and 1000ms)
+      unsigned long randomWait = random(0, 1001);
+      delay(randomWait);
+
+      // Send several attempts (MEMBER_ATTEMPTS), with a random multiplier interval (Send several attempts (MEMBER_ATTEMPTS), with a random multiplier interval)
+      for (int i = 0; i < MEMBER_ATTEMPTS; i++) {
+        String memberMsg = "I am your member:" + String(NODE_ID);
+        e220ttl.sendMessage(memberMsg);
+        Serial.print("Sending member message (Attempt ");
+        Serial.print(i+1);
+        Serial.println(")");
+
+        if (i < MEMBER_ATTEMPTS - 1) {
+          // Random multiplier of 0 to 1.5 (Random multiplier of 0 to 1.5)
+          float factor = (float)random(0, 151) / 100.0; 
+          unsigned long attemptDelay = (unsigned long)(500 * factor); 
+          delay(attemptDelay); 
+        }
+      }
+
+      delay(200);
+      hasClusterHead = false; 
+    }
+  }
+}
+
+
+
+// VERSIÓN ESPAÑOL
+
+#include <WiFi.h>
+#include "Arduino.h"
+#include "LoRa_E220.h"
+#include <ThingSpeak.h>
+// Ajustar este ID único para cada nodo: 1, 2 o 3
+const uint8_t NODE_ID = 1; 
+
+// Configuración de pines para el ESP32
+LoRa_E220 e220ttl(17, 16, &Serial2, 18, 21, 19, UART_BPS_RATE_9600);
+
+// Definir el pin del LED
+const int ledPin = 23;
+
+// Número de intentos de envío de membresía por miembro
+#define MEMBER_ATTEMPTS 3
+
+// Variables globales
+bool isClusterHead = false;   
+bool hasClusterHead = false;  
+int batteryLevel;             
+float probabilityThreshold;
+unsigned long lastClusterHeadTime = 0; 
+unsigned long cooldownTime = 5000;     
+unsigned long lastMemberTime = 0;
+
+// Ajustes de tiempo
+unsigned long arbitrationTime = 2000;   // Tiempo máx. para arbitraje (2s)
+unsigned long memberCheckTime = 6000;   // Tiempo para recibir miembros (6s)
+
+// Estructura para rastrear miembros confirmados
+bool membersConfirmed[4] = {false, false, false, false}; // Índices 1-3 usados
+
+void setup() {
+  Serial.begin(9600);
+  delay(1000);
+
+  pinMode(ledPin, OUTPUT);
+
+  if (e220ttl.begin()) {
+    Serial.println("Error inicializando el módulo E220");
+    while (1);
+  }
+  Serial.print("Módulo E220 inicializado correctamente. Nodo ID: ");
+  Serial.println(NODE_ID);
+
+  randomSeed(analogRead(0) * NODE_ID);
+}
+
+void loop() {
+  batteryLevel = random(80, 101); 
+  probabilityThreshold = random(90, 96) / 100.0; 
+
+  float probability = batteryLevel / 100.0;
+
+  if (hasClusterHead) {
+    listenForClusterHead();
+  } else {
+    if (millis() - lastClusterHeadTime >= cooldownTime && probability >= probabilityThreshold) {
+      startArbitration(probability);
+    } else {
+      listenForClusterHead();
+    }
+  }
+
+  delay(100); // Pausa corta
+}
+
+// Iniciar arbitraje para ser Cluster Head
+void startArbitration(float probability) {
+  Serial.println("Iniciando arbitraje para ser Cluster Head...");
+
+  String msg = "Solicitud CH:" + String(NODE_ID) + ":" + String(batteryLevel) + ":" + String(probability);
+  e220ttl.sendMessage(msg);
+
+  unsigned long startTime = millis();
+  bool canBecomeCH = true;
+  uint8_t bestNodeID = NODE_ID;
+  int bestBattery = batteryLevel;
+  float bestProb = probability;
+
+  while (millis() - startTime < arbitrationTime) {
+    ResponseContainer rc = e220ttl.receiveMessage();
+    if (rc.status.code == 1) {
+      String m = rc.data;
+      if (m.startsWith("Solicitud CH:")) {
+        int firstColon = m.indexOf(':', 12);
+        int secondColon = m.indexOf(':', firstColon + 1);
+
+        uint8_t otherID = m.substring(12, firstColon).toInt();
+        int otherBattery = m.substring(firstColon + 1, secondColon).toInt();
+        float otherProb = m.substring(secondColon + 1).toFloat();
+
+        // Menor ID gana prioridad
+        if (otherID < bestNodeID) {
+          bestNodeID = otherID;
+          bestBattery = otherBattery;
+          bestProb = otherProb;
+        } else if (otherID == bestNodeID) {
+          // Desempate final 50%
+          if (otherBattery > bestBattery || (otherBattery == bestBattery && otherProb > bestProb)) {
+            if (random(0,2) == 0) {
+              canBecomeCH = false;
+            }
+          }
+        }
+      } else if (m == "Yo soy el Cluster Head") {
+        // Otro nodo ya se declaró CH, abandonamos inmediatamente el arbitraje
+        hasClusterHead = true;
+        canBecomeCH = false;
+        Serial.println("Detectado otro Cluster Head durante arbitraje. Abandonando arbitraje.");
+        break; // Salir del while
+      }
+    }
+  }
+
+  if (bestNodeID != NODE_ID) {
+    canBecomeCH = false;
+  }
+
+  if (!canBecomeCH) {
+    Serial.println("Pierdo arbitraje o detecto CH antes que yo, entro en cooldown corto...");
+    lastClusterHeadTime = millis();
+    cooldownTime = random(5000, 10000); 
+    hasClusterHead = false;
+    isClusterHead = false;
+    return;
+  }
+
+  becomeClusterHead(probability);
+}
+
+// Convertirse en Cluster Head
+void becomeClusterHead(float probability) {
+  isClusterHead = true;
+  hasClusterHead = false; 
+  lastClusterHeadTime = millis();
+
+  Serial.println("Soy Cluster Head. Avisando a los demás...");
+  Serial.print("Nivel de batería (CH): ");
+  Serial.println(batteryLevel);
+  Serial.print("Probabilidad (CH): ");
+  Serial.println(probability);
+  Serial.print("Umbral utilizado: ");
+  Serial.println(probabilityThreshold);
+
+  digitalWrite(ledPin, HIGH);
+  e220ttl.sendMessage("Yo soy el Cluster Head");
+
+  unsigned long startTime = millis();
+  int memberCount = 0; 
+
+  // Reiniciar la estructura de miembros confirmados
+  for(int i = 0; i < 4; i++) {
+    membersConfirmed[i] = false;
+  }
+
+  while (millis() - startTime < memberCheckTime) {
+    delay(10); // Pequeña pausa para procesar mensajes
+    ResponseContainer rc = e220ttl.receiveMessage();
+    if (rc.status.code == 1) {
+      String msg = rc.data;
+      if (msg.startsWith("Yo soy tu miembro:")) {
+        uint8_t memberID = msg.substring(18).toInt();
+        if(memberID >=1 && memberID <=3){
+          if(!membersConfirmed[memberID]){
+            membersConfirmed[memberID] = true;
+            memberCount++;
+            Serial.print("Miembro confirmado en el cluster. Nodo ID: ");
+            Serial.println(memberID);
+          }
+          else{
+            Serial.print("Mensaje duplicado de nodo ");
+            Serial.println(memberID);
+          }
+        }
+        else{
+          Serial.print("Nodo ID inválido recibido: ");
+          Serial.println(memberID);
+        }
+      }
+    }
+  }
+
+  digitalWrite(ledPin, LOW);
+  isClusterHead = false;
+  hasClusterHead = false; 
+  lastClusterHeadTime = millis();
+
+  if (memberCount == 0) {
+    Serial.println("Sin miembros. Reseteando estado...");
+    cooldownTime = random(5000, 10000); 
+  } else {
+    // Aumentar cooldown largo a 20-25 segundos
+    cooldownTime = random(20000, 25000); 
+  }
+}
+
+// Escuchar mensajes de otros nodos (cuando no es CH)
+void listenForClusterHead() {
+  ResponseContainer rc = e220ttl.receiveMessage();
+  if (rc.status.code == 1) {
+    String message = rc.data;
+    if (message == "Yo soy el Cluster Head") {
+      hasClusterHead = true;
+      Serial.println("Otro nodo es Cluster Head. Soy miembro.");
+
+      // Retraso aleatorio mayor antes de primer envío, por ejemplo entre 0 y 1000ms
+      unsigned long randomWait = random(0, 1001);
+      delay(randomWait);
+
+      // Enviar varios intentos (MEMBER_ATTEMPTS), con un intervalo multiplicador aleatorio
+      for (int i = 0; i < MEMBER_ATTEMPTS; i++) {
+        String memberMsg = "Yo soy tu miembro:" + String(NODE_ID);
+        e220ttl.sendMessage(memberMsg);
+        Serial.print("Enviando mensaje de miembro (Intento ");
+        Serial.print(i+1);
+        Serial.println(")");
+
+        if (i < MEMBER_ATTEMPTS - 1) {
+          // Multiplicador aleatorio de 0 a 1.5
+          float factor = (float)random(0, 151) / 100.0; 
+          unsigned long attemptDelay = (unsigned long)(500 * factor); 
+          delay(attemptDelay); 
+        }
+      }
+
+      delay(200);
+      hasClusterHead = false; 
+    }
+  }
+}
