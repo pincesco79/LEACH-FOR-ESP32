@@ -10,7 +10,7 @@ enum NodeState {
 };
 
 // Ajustar este ID único para cada nodo: 1, 2 o 3
-const uint8_t NODE_ID = 3; 
+const uint8_t NODE_ID = 1; 
 const uint8_t TOTAL_NODES = 3;
 
 // Configuración de pines para el ESP32 y LoRa
