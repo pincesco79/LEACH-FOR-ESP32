@@ -1,17 +1,18 @@
 /***************************************************************
- * NODO 3: Rain Sensor
+ * NODE 3: Rain Sensor
  ***************************************************************/
 #include "Arduino.h"
 #include "LoRa_E220.h"
 #include <Pangodream_18650_CL.h>
 
-// ------------------- PINES Y DEFINICIONES -------------------
+// ------------------- PINS AND DEFINITIONS -------------------
 #define RAIN_PWR 2  
 #define RAIN_PIN 5  
 
 #define ADC_PIN 4     
 #define CONV_FACTOR 3.1
 #define READS 20
+int rainValue;
 Pangodream_18650_CL battery(ADC_PIN, CONV_FACTOR, READS);
 
 int getBatteryChargeLevel(float voltage) {
@@ -22,7 +23,7 @@ int getBatteryChargeLevel(float voltage) {
   return (voltage / VOLTAGE_MAX) * 100;
 }
 
-// ------------------- ESTADOS Y CONFIG -----------------------
+// ------------------- STATES AND CONFIG -----------------------
 enum NodeState {
   SEARCHING_CH,
   CLUSTER_HEAD,
@@ -33,7 +34,7 @@ enum NodeState {
 const int dry = 2400;
 const int wet = 900;
 
-// IMPORTANTE: NODO 3
+// IMPORTANT: NODE 3
 const uint8_t NODE_ID = 3; 
 const uint8_t TOTAL_NODES = 3;
 
@@ -48,7 +49,7 @@ unsigned long lastClusterHeadTime = 0;
 const unsigned long cooldownTime = 60000; 
 unsigned long memberCheckTime = 25000;
 
-// ------------------- ARRAYS DE DATOS ------------------------
+// ------------------- DATA ARRAYS ------------------------
 bool membersConfirmed[TOTAL_NODES + 1] = {false, false, false, false};
 float nodeTemp[TOTAL_NODES + 1] = {0,0,0,0};
 float nodeHum[TOTAL_NODES + 1]  = {0,0,0,0};
@@ -73,10 +74,10 @@ void setup() {
   pinMode(RAIN_PIN, INPUT);
 
   if (!e220ttl.begin()) {
-    Serial.println("Error inicializando el módulo E220");
+    Serial.println("Error initializing E220 module");
     while (1);
   }
-  Serial.print("Módulo E220 inicializado correctamente. Nodo ID: ");
+  Serial.print("E220 module initialized successfully. Node ID: ");
   Serial.println(NODE_ID);
 
   randomSeed(analogRead(0) * NODE_ID);
@@ -91,7 +92,7 @@ void loop() {
     case MEMBER:         actAsMember();              break;
     case WAITING_COOLDOWN:
       if (currentMillis - lastClusterHeadTime >= cooldownTime) {
-        Serial.println("Periodo de enfriamiento terminado. Iniciando nueva ronda.");
+        Serial.println("Cooldown period ended. Starting a new round.");
         currentState = SEARCHING_CH;
       }
       break;
@@ -100,7 +101,7 @@ void loop() {
 
 // ------------------- SEARCHING_CH -------------------
 void performSearchClusterHead() {
-  Serial.println("=== BUSQUEDA DE CLUSTER-HEAD (FASE INICIAL) ===");
+  Serial.println("=== CLUSTER-HEAD SEARCH (INITIAL PHASE) ===");
   unsigned long startSearchTime = millis();
   bool chFound = false;  
   int fib[5] = {1, 1, 2, 3, 5};
@@ -113,21 +114,21 @@ void performSearchClusterHead() {
       String incoming = rc.data;
       processReceivedMessage(incoming);
       incoming.trim();
-      Serial.print("Mensaje recibido durante búsqueda CH: '");
+      Serial.print("Message received during CH search: '");
       Serial.print(incoming);
       Serial.println("'");
 
-      if (incoming == "Si hay cluster-head" || incoming == "Yo soy el Cluster Head") {
+      if (incoming == "Yes, there is a cluster-head" || incoming == "I am the Cluster Head") {
         chFound = true;
         mustWaitForNextCH = true;
-        Serial.println("Cluster Head detectado.");
+        Serial.println("Cluster Head detected.");
         break; 
       }
     }
     unsigned long interval = (unsigned long)(fib[fibIndex] * 1000);
     if (millis() - lastSend >= interval) {
-      e220ttl.sendBroadcastFixedMessage(23, "¿Hay cluster-head?\n");
-      Serial.println("Preguntando: ¿Hay cluster-head?");
+      e220ttl.sendBroadcastFixedMessage(23, "Is there a cluster-head?\n");
+      Serial.println("Asking: Is there a cluster-head?");
       lastSend = millis();
       fibIndex++;
       if (fibIndex >= 5) fibIndex = 0;
@@ -136,7 +137,7 @@ void performSearchClusterHead() {
   }
 
   if (mustWaitForNextCH) {
-    Serial.println("CH ya existe, esperando siguiente ronda...");
+    Serial.println("CH already exists, waiting for next round...");
     bool nextCHfound = false;
     while (!nextCHfound) {
       ResponseContainer rc2 = e220ttl.receiveMessage();
@@ -144,31 +145,31 @@ void performSearchClusterHead() {
         String msg2 = rc2.data;
         processReceivedMessage(msg2);
         msg2.trim();
-        Serial.print("Mensaje recibido mientras espera siguiente CH: '");
+        Serial.print("Message received while waiting for next CH: '");
         Serial.print(msg2);
         Serial.println("'");
 
-        if (msg2 == "Yo soy el Cluster Head") {
+        if (msg2 == "I am the Cluster Head") {
           nextCHfound = true;
-          Serial.println("Nuevo CH detectado, listo para unirse.");
+          Serial.println("New CH detected, ready to join.");
         }
       }
       delay(10);
     }
   }
 
-  Serial.println("Fin de la fase de búsqueda de cluster-head.");
+  Serial.println("End of cluster-head search phase.");
   delay(2000);
   currentState = MEMBER;
 }
 
 // ------------------- CLUSTER HEAD -------------------
 void actAsClusterHead() {
-  Serial.println("Soy Cluster Head elegido por batería");
+  Serial.println("I am the Cluster Head chosen by battery");
   digitalWrite(ledPin, HIGH);
 
-  e220ttl.sendBroadcastFixedMessage(23, "Yo soy el Cluster Head\n");
-  Serial.println("CH envia: Yo soy el Cluster Head");
+  e220ttl.sendBroadcastFixedMessage(23, "I am the Cluster Head\n");
+  Serial.println("CH sends: I am the Cluster Head");
   delay(2000); 
 
   for(int i = 1; i <= TOTAL_NODES; i++) {
@@ -179,7 +180,7 @@ void actAsClusterHead() {
     nodeRain[i] = 0.0;
   }
 
-  Serial.println("CH escuchando membresías...");
+  Serial.println("CH listening for memberships...");
   unsigned long startTime = millis();
   while (millis() - startTime < memberCheckTime) {
     delay(10); 
@@ -188,24 +189,24 @@ void actAsClusterHead() {
       String msg = rc.data;
       processReceivedMessage(msg);
       msg.trim();
-      Serial.print("Mensaje recibido en CH: '");
+      Serial.print("Message received at CH: '");
       Serial.print(msg);
       Serial.println("'");
 
-      if (msg == "¿Hay cluster-head?") {
-        e220ttl.sendBroadcastFixedMessage(23, "Si hay cluster-head\n");
-        Serial.println("CH responde: Si hay cluster-head");
+      if (msg == "Is there a cluster-head?") {
+        e220ttl.sendBroadcastFixedMessage(23, "Yes, there is a cluster-head\n");
+        Serial.println("CH responds: Yes, there is a cluster-head");
       }
-      if (msg.startsWith("Yo sere tu miembro:")) {
+      if (msg.startsWith("IWillBeYourMember: ")) {
         uint8_t memberID = msg.substring(19).toInt();
         if (memberID >=1 && memberID <=3 && memberID != NODE_ID) {
           if(!membersConfirmed[memberID]){
             membersConfirmed[memberID] = true;
-            Serial.print("Miembro confirmado: Nodo ");
+            Serial.print("Member confirmed: Node ");
             Serial.println(memberID);
             delay(1000); 
-            e220ttl.sendBroadcastFixedMessage(23, "Miembro confirmado:" + String(memberID) + "\n");
-            Serial.print("CH confirma miembro: Nodo ");
+            e220ttl.sendBroadcastFixedMessage(23, "Member confirmed:" + String(memberID) + "\n");
+            Serial.print("CH confirms member: Node ");
             Serial.println(memberID);
           }
         }
@@ -216,21 +217,14 @@ void actAsClusterHead() {
   lastClusterHeadTime = millis();
   delay(2000); 
 
-  // Enviar "Envio de horario" 5 veces
+  // Send "Sending schedule" 5 times
   for (int i = 0; i < 5; i++) {
-    e220ttl.sendBroadcastFixedMessage(23, "Envio de horario\n");
-    Serial.println("CH envia: Envio de horario");
+    e220ttl.sendBroadcastFixedMessage(23, "Sending schedule\n");
+    Serial.println("CH sends: Sending schedule");
     delay(1000);
-  }
+  }  
 
-  // --- Leer Rain local (nodo3) ---
-  digitalWrite(RAIN_PWR, HIGH);
-  delay(10);
-  int rainState = digitalRead(RAIN_PIN);
-  digitalWrite(RAIN_PWR, LOW);
-  nodeRain[NODE_ID] = rainState;
-
-  // Escucha 60s
+  // Listen for 60s
   unsigned long scheduleStart = millis();
   unsigned long listenTime = 60000; 
   while (millis() - scheduleStart < listenTime) {
@@ -239,27 +233,41 @@ void actAsClusterHead() {
     if (rc.status.code == 1) {
       String incoming = rc.data;
       processReceivedMessage(incoming);
-      Serial.print("CH recibe: ");
+      Serial.print("CH receives: ");
       Serial.println(incoming);
     }
   }
 
-  // SOLO UNA VEZ: imprimir y enviar
-  Serial.println("=== Datos finales de la ronda ===");
+  // Read local Rain (because I'm node 3 and I'm CH)
+  digitalWrite(RAIN_PWR, HIGH);
+  delay(50);
+  int localRainState = digitalRead(RAIN_PIN);
+  digitalWrite(RAIN_PWR, LOW);
+
+  if (localRainState == HIGH) {
+    Serial.println("CH (node 3): NO Rain detected");
+    nodeRain[NODE_ID] = 0; // Assign to nodeRain[3]
+  } else {
+    Serial.println("CH (node 3): Rain detected");
+    nodeRain[NODE_ID] = 1; // Assign to nodeRain[3]
+  }
+
+  // ONLY ONCE: print and send
+  Serial.println("=== Final round data ===");
   // nodeTemp[1], nodeHum[1], nodeSoil[2], nodeRain[3]
   String finalData = "Temp=" + String(nodeTemp[1]) +
                      " | Hum=" + String(nodeHum[1]) +
                      " | Soil=" + String(nodeSoil[2]) +
                      " | Rain=" + String(nodeRain[3]);
-  Serial.println("Datos recogidos: " + finalData);
+  Serial.println("Collected data: " + finalData);
 
-  // Enviar a 0x0002, canal 23
+  // Send to 0x0002, channel 23
   ResponseStatus rs = e220ttl.sendFixedMessage(0,2,23, finalData.c_str());
-  Serial.println("Datos enviados a 0x0002 canal 23.");
+  Serial.println("Data sent to 0x0002 channel 23.");
 
   delay(2000); 
-  e220ttl.sendBroadcastFixedMessage(23, "Termine mi ronda\n");
-  Serial.println("CH envia: Termine mi ronda");
+  e220ttl.sendBroadcastFixedMessage(23, "I finished my round\n");
+  Serial.println("CH sends: I finished my round");
   digitalWrite(ledPin, LOW);
   delay(1000); 
 
@@ -267,25 +275,34 @@ void actAsClusterHead() {
   currentState = WAITING_COOLDOWN;
 }
 
-// ------------------- MIEMBRO -------------------
+// ------------------- MEMBER -------------------
 void actAsMember() {
   float voltageNow = battery.getBatteryVolts();
   if (recentlyWasCH) {
-    Serial.println("Enviando bateria = 1 (Porque acabo de ser CH).");
+    Serial.println("Sending battery = 1 (Because I was just CH).");
     batteryLevels[NODE_ID] = 1;
     recentlyWasCH = false;
   } else {
     batteryLevels[NODE_ID] = voltageNow;
   }
-  Serial.print("Mi nivel de bateria esta ronda: ");
+  Serial.print("My battery level this round: ");
   Serial.println(batteryLevels[NODE_ID]);
 
-  // Leer Rain local
+  // Read local Rain
   digitalWrite(RAIN_PWR, HIGH);
-  delay(10);
+  delay(50);
   int rainState = digitalRead(RAIN_PIN);
   digitalWrite(RAIN_PWR, LOW);
 
+  if (rainState == HIGH){
+    Serial.println("The rain is NOT detected");
+    rainValue=0;
+    }
+  else{
+    Serial.println("The rain is detected");
+    rainValue=1;
+    Serial.println(rainValue);
+  }
   unsigned long batteryExchangeStart = millis();
   unsigned long batterySendDelay = NODE_ID * 10000;
   bool batterySent = false;
@@ -298,17 +315,17 @@ void actAsMember() {
       String inc = rc.data;
       processReceivedMessage(inc);
       inc.trim();
-      Serial.print("Mensaje recibido como miembro: '");
+      Serial.print("Message received as member: '");
       Serial.print(inc);
       Serial.println("'");
-      
-      if (inc == "¿Hay cluster-head?") {
-        e220ttl.sendBroadcastFixedMessage(23, "Proceso ya inicio\n");
-        Serial.println("Miembro responde: Proceso ya inicio");
+
+      if (inc == "Is there a cluster-head?") {
+        e220ttl.sendBroadcastFixedMessage(23, "Process has already started\n");
+        Serial.println("Member replies: Process has already started");
       }
-      if (currentState == CLUSTER_HEAD && inc == "¿Hay cluster-head?") {
-        e220ttl.sendBroadcastFixedMessage(23, "Si hay cluster-head\n");
-        Serial.println("Miembro responde: Si hay cluster-head");
+      if (currentState == CLUSTER_HEAD && inc == "Is there a cluster-head?") {
+        e220ttl.sendBroadcastFixedMessage(23, "Yes, there is a cluster-head\n");
+        Serial.println("Member replies: Yes, there is a cluster-head");
       }
       if (inc.startsWith("Batt:")) {
         int c1 = inc.indexOf(':',5);
@@ -317,7 +334,7 @@ void actAsMember() {
           float bVal = inc.substring(c1+1).toFloat();
           if (bID >=1 && bID <=3) {
             batteryLevels[bID] = bVal;
-            Serial.print("Bateria recibida de nodo ");
+            Serial.print("Battery received from node ");
             Serial.print(bID);
             Serial.print(": ");
             Serial.println(bVal);
@@ -329,7 +346,7 @@ void actAsMember() {
     if (!batterySent && (millis() - batteryExchangeStart >= batterySendDelay)) {
       String battMsg = "Batt:" + String(NODE_ID) + ":" + String(batteryLevels[NODE_ID],1) + "\n";
       e220ttl.sendBroadcastFixedMessage(23, battMsg);
-      Serial.print("Miembro envia nivel de batería: ");
+      Serial.print("Member sends battery level: ");
       Serial.println(battMsg);
       batterySent = true;
     }
@@ -347,10 +364,10 @@ void actAsMember() {
   }
 
   if (maxID == NODE_ID) {
-    Serial.println("Miembro se convierte en Cluster Head.");
+    Serial.println("Member becomes Cluster Head.");
     currentState = CLUSTER_HEAD;
   } else {
-    Serial.println("No soy CH, intentando membresía...");
+    Serial.println("I am not CH, trying membership...");
     int fibMem[5] = {1, 1, 2, 3, 5};
     int fibIndexMem = 0;
     unsigned long lastMemSend = millis();
@@ -361,9 +378,9 @@ void actAsMember() {
       if (!miembroConfirmado) {
         unsigned long intervalMem = (unsigned long)(fibMem[fibIndexMem] * 1000);
         if (millis() - lastMemSend >= intervalMem) {
-          String memberMsg = "Yo sere tu miembro:" + String(NODE_ID) + "\n";
+          String memberMsg = "IWillBeYourMember: " + String(NODE_ID) + "\n";
           e220ttl.sendBroadcastFixedMessage(23, memberMsg);
-          Serial.print("Miembro envia solicitud de membresía: ");
+          Serial.print("Member sends membership request: ");
           Serial.println(memberMsg);
           lastMemSend = millis();
           fibIndexMem++;
@@ -376,36 +393,37 @@ void actAsMember() {
         String msg2 = rc2.data;
         processReceivedMessage(msg2);
         msg2.trim();
-        Serial.print("Miembro recibe mensaje: '");
+        Serial.print("Member receives message: '");
         Serial.print(msg2);
         Serial.println("'");
-  
-        if (msg2 == "Envio de horario") {
-          Serial.println("Miembro: Recibido 'Envio de horario', ya soy parte del cluster");
+
+        if (msg2 == "Sending schedule") {
+          miembroConfirmado = true;
+          Serial.println("Member: Received 'Sending schedule', I'm now part of the cluster");
           unsigned long waitTime = (unsigned long)(NODE_ID * 10000); 
-          Serial.print("Miembro esperando ");
+          Serial.print("Member waiting ");
           Serial.print(waitTime / 1000);
-          Serial.println(" s antes de enviar Rain...");
+          Serial.println(" s before sending Rain...");
           delay(waitTime);
 
-          String rainMsg = "Rain:" + String(NODE_ID) + ":" + String(rainState) + "\n";
+          String rainMsg = "Rain:" + String(NODE_ID) + ":" + String(rainValue) + "\n";
           e220ttl.sendBroadcastFixedMessage(23, rainMsg);
-          Serial.print("Miembro envia Rain sensor: ");
+          Serial.print("Member sends Rain sensor: ");
           Serial.println(rainMsg);
         } 
-        else if (msg2.startsWith("Miembro confirmado:")) {
+        else if (msg2.startsWith("Member confirmed:")) {
           int colonPos = msg2.indexOf(':');
           if(colonPos != -1) {
             int confirmedID = msg2.substring(colonPos+1).toInt();
             if (confirmedID == NODE_ID) {
               miembroConfirmado = true;
-              Serial.println("Miembro: Recibida confirmación del cluster-head, deteniendo envíos de membresía");
+              Serial.println("Member: Confirmation from cluster-head received, stopping membership requests");
             }
           }
         } 
-        else if (msg2 == "Termine mi ronda") {
+        else if (msg2 == "I finished my round") {
           finRonda = true;
-          Serial.println("Miembro: Fin de ronda antes de horario o nuevo CH detectado.");
+          Serial.println("Member: Round ended before schedule or new CH detected.");
         }
       }
     }
@@ -417,18 +435,18 @@ void actAsMember() {
         String msg3 = rc3.data;
         processReceivedMessage(msg3);
         msg3.trim();
-        Serial.print("Miembro recibe mensaje mientras espera terminar ronda: '");
+        Serial.print("Member receives message while waiting to finish round: '");
         Serial.print(msg3);
         Serial.println("'");
-  
-        if (msg3 == "Termine mi ronda") {
+
+        if (msg3 == "I finished my round") {
           finRonda = true;
-          Serial.println("Miembro: Fin de ronda antes de horario o nuevo CH detectado.");
+          Serial.println("Member: Round ended before schedule or new CH detected.");
         }
       }
     }
     if (finRonda) {
-      Serial.println("Miembro: Iniciando nueva ronda.");
+      Serial.println("Member: Starting a new round.");
       currentState = SEARCHING_CH;
     }
   }
@@ -438,7 +456,7 @@ void processReceivedMessage(String incoming) {
   int delimiterPos;
   while ((delimiterPos = incoming.indexOf('\n')) != -1) {
     String singleMsg = incoming.substring(0, delimiterPos);
-    Serial.println("Procesando mensaje: " + singleMsg);
+    Serial.println("Processing message: " + singleMsg);
     incoming = incoming.substring(delimiterPos + 1);
     singleMsg.trim();
 
@@ -449,7 +467,7 @@ void processReceivedMessage(String incoming) {
         float tVal = singleMsg.substring(c1 + 1).toFloat();
         if (tID >=1 && tID <=3) {
           nodeTemp[tID] = tVal;
-          Serial.print("Temperatura recibida de nodo ");
+          Serial.print("Temperature received from node ");
           Serial.println(tID);
         }
       }
@@ -461,7 +479,7 @@ void processReceivedMessage(String incoming) {
         float tVal = singleMsg.substring(c1 + 1).toFloat();
         if (tID >=1 && tID <=3) {
           nodeHum[tID] = tVal;
-          Serial.print("Humedad recibida de nodo ");
+          Serial.print("Humidity received from node ");
           Serial.println(tID);
         }
       }
@@ -473,7 +491,7 @@ void processReceivedMessage(String incoming) {
         float tVal = singleMsg.substring(c1 + 1).toFloat();
         if (tID >=1 && tID <=3) {
           nodeSoil[tID] = tVal;
-          Serial.print("Soil moisture recibido de nodo ");
+          Serial.print("Soil moisture received from node ");
           Serial.println(tID);
         }
       }
@@ -485,7 +503,7 @@ void processReceivedMessage(String incoming) {
         float tVal = singleMsg.substring(c1 + 1).toFloat();
         if (tID >=1 && tID <=3) {
           nodeRain[tID] = tVal;
-          Serial.print("Rain sensor recibido de nodo ");
+          Serial.print("Rain sensor received from node ");
           Serial.println(tID);
         }
       }

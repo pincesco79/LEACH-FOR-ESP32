@@ -18,14 +18,20 @@
 #include <Adafruit_SSD1306.h>
 
 // --- Credenciales WiFi ---
-const char* ssid = "iPhone Anthonny";
-const char* password = "Anthonny1998";
+const char* WIFI_SSID = "IoT-Network";
+const char* WIFI_PASSWORD = "4ndr0m3d4";
+// Set Static IP configuration
+IPAddress local_IP(192, 168, 2, 3);
+IPAddress gateway(192, 168, 2, 1);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress primaryDNS(8, 8, 8, 8);  
+
 
 // --- Datos broker MQTT ---
-const char* mqtt_server   = "172.20.10.3";
+const char* mqtt_server   = "192.168.2.1";
 const int   mqtt_port     = 1883;
 const char* mqtt_user     = "dayana";
-const char* mqtt_pass     = "";
+const char* mqtt_pass     = "12345";
 
 // Tópicos de interés
 const char* topicTemp  = "sensor/Temp";
@@ -60,19 +66,17 @@ const unsigned long LED_DURATION = 20000; // 1 min (60000 ms)
 // (1) Conectarse a WiFi
 // ------------------------------------------------------
 void setup_wifi() {
-  delay(10);
-  Serial.println();
-  Serial.print("Conectando a ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
+ Serial.print("Connecting to ");
+  Serial.println(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
+    if (!WiFi.config(local_IP, gateway, subnet, primaryDNS)) {
+      Serial.println("STA Failed to configure");
+    }
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
-  Serial.println("WiFi conectado.");
-  Serial.print("IP: ");
+  Serial.println("\nWiFi connected, IP: ");
   Serial.println(WiFi.localIP());
 }
 
