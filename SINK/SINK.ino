@@ -7,11 +7,15 @@
 LoRa_E220 e220ttl(17, 16, &Serial2, 15, 21, 19, UART_BPS_RATE_9600);
 
 // Credenciales WiFi
-const char* WIFI_SSID     = "iPhone Anthonny";
-const char* WIFI_PASSWORD = "Anthonny1998";
+//const char* WIFI_SSID     = "iPhone Anthonny";
+//const char* WIFI_PASSWORD = "Anthonny1998";
+
+const char* WIFI_SSID     = "IoT-Net";
+const char* WIFI_PASSWORD = "4ndr0m3d4;1";
 
 // Broker MQTT
-const char* MQTT_SERVER   = "172.20.10.3";
+//const char* MQTT_SERVER   = "172.20.10.3";
+const char* MQTT_SERVER   = "192.168.79.16";
 const int   MQTT_PORT     = 1883;
 const char* MQTT_USER     = "dayana";
 const char* MQTT_PASS     = "";
