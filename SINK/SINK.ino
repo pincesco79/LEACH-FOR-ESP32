@@ -3,10 +3,10 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-// LoRa E220 (pines ajusta si requieres)
+// LoRa E220 pin configuration
 LoRa_E220 e220ttl(17, 16, &Serial2, 15, 21, 19, UART_BPS_RATE_9600);
 
-// Credenciales WiFi
+// Wifi Credentials
 //const char* WIFI_SSID     = "iPhone Anthonny";
 //const char* WIFI_PASSWORD = "Anthonny1998";
 
@@ -38,12 +38,12 @@ void setup() {
   Serial.begin(9600);
   delay(2000);
 
-  // Iniciar LoRa
+  // LoRa Initialization
   if (!e220ttl.begin()) {
     Serial.println("Initialization Lora E220 Failed");
     while(1);
   }
-  Serial.println("LoRa Listening...");
+  Serial.println("LoRa E220 initialized");
 
   // WiFi + MQTT
   setupWiFi();
@@ -52,14 +52,13 @@ void setup() {
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
-    // Podrías reconectar si deseas
   }
   if (!mqttClient.connected()) {
     reconnectMQTT();
   }
   mqttClient.loop();
 
-  // Escuchar LoRa
+  // Listen to LoRa
   ResponseContainer rc = e220ttl.receiveMessage();
   if (rc.status.code == 1) {
     String incoming = rc.data;
@@ -68,9 +67,9 @@ void loop() {
       Serial.print("Received Data: ");
       Serial.println(incoming);
       
-      // Ver si empieza con "Temp=" (o "Hum=", etc.)
+      // See if it starts with “Temp=” (or “Hum=”, etc.)
       if (incoming.startsWith("Temp=")) {
-        // Parseamos y publicamos con retain
+        // Parse and publish with retain
         publishSensorValues(incoming);
       }
     }
@@ -87,14 +86,14 @@ void setupWiFi() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi connected, IP address assigned by DHCP: ");
+  Serial.print("\nWiFi connected, IP address assigned by DHCP: ");
   Serial.print(WiFi.localIP());
 }
 
 // ------------------ RECONNECT MQTT ------------------
 void reconnectMQTT() {
   while (!mqttClient.connected()) {
-    Serial.print("Establishing MQTT connection... ");
+    Serial.print("\nEstablishing MQTT connection... ");
     if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
       Serial.println("MQTT broker connection established");
     } else {
@@ -107,10 +106,10 @@ void reconnectMQTT() {
 }
 
 // ------------------ PARSE & PUBLISH ------------------
-// Con 'retain=true' para que los mensajes se guarden en el broker
+// With 'retain=true' for messages to be stored in the broker
 void publishSensorValues(String line) {
   // line: "Temp=21.20 | Hum=37.10 | Soil=0.00 | Rain=0.00"
-  // Splitear por " | "
+  // Split by “ | ”
   String splitted[4];
   int startIndex = 0;
   for(int i=0; i<4; i++) {
@@ -120,7 +119,7 @@ void publishSensorValues(String line) {
       break;
     } else {
       splitted[i] = line.substring(startIndex, foundPos);
-      startIndex = foundPos + 3; // saltar " | "
+      startIndex = foundPos + 3; // discard " | "
     }
   }
   // splitted[0] = "Temp=21.20"
