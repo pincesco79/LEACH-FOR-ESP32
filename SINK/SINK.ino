@@ -40,10 +40,10 @@ void setup() {
 
   // Iniciar LoRa
   if (!e220ttl.begin()) {
-    Serial.println("Error inicializando E220");
+    Serial.println("Initialization Lora E220 Failed");
     while(1);
   }
-  Serial.println("Receptor LoRa listo.");
+  Serial.println("LoRa Listening...");
 
   // WiFi + MQTT
   setupWiFi();
@@ -65,7 +65,7 @@ void loop() {
     String incoming = rc.data;
     incoming.trim();
     if (incoming.length() > 0) {
-      Serial.print("Datos recibidos: ");
+      Serial.print("Received Data: ");
       Serial.println(incoming);
       
       // Ver si empieza con "Temp=" (o "Hum=", etc.)
@@ -80,27 +80,27 @@ void loop() {
 
 // ------------------ SETUP WIFI ------------------
 void setupWiFi() {
-  Serial.print("Conectando a ");
+  Serial.print("Connecting to WiFi SSID ");
   Serial.println(WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi conectado, IP: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("\nWiFi connected, IP address assigned by DHCP: ");
+  Serial.print(WiFi.localIP());
 }
 
 // ------------------ RECONNECT MQTT ------------------
 void reconnectMQTT() {
   while (!mqttClient.connected()) {
-    Serial.print("Intentando conexión MQTT... ");
+    Serial.print("Establishing MQTT connection... ");
     if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
-      Serial.println("¡Conectado al broker!");
+      Serial.println("MQTT broker connection established");
     } else {
-      Serial.print("Fallo, rc=");
+      Serial.print("Error, rc=");
       Serial.print(mqttClient.state());
-      Serial.println(" intentando de nuevo en 5s");
+      Serial.println(" ... new trial in 5s");
       delay(5000);
     }
   }
@@ -140,22 +140,22 @@ void publishSensorValues(String line) {
     // Publicar con retain=true
     if (varName.equalsIgnoreCase("Temp")) {
       if (mqttClient.publish(TOPIC_TEMP, varValue.c_str(), true)) {
-        Serial.println("Publicado sensor/Temp (retain): " + varValue);
+        Serial.println("Published on sensor/Temp (retain): " + varValue);
       }
     } 
     else if (varName.equalsIgnoreCase("Hum")) {
       if (mqttClient.publish(TOPIC_HUM, varValue.c_str(), true)) {
-        Serial.println("Publicado sensor/Hum (retain): " + varValue);
+        Serial.println("Published on sensor/Hum (retain): " + varValue);
       }
     }
     else if (varName.equalsIgnoreCase("Soil")) {
       if (mqttClient.publish(TOPIC_SOIL, varValue.c_str(), true)) {
-        Serial.println("Publicado sensor/Soil (retain): " + varValue);
+        Serial.println("Published on sensor/Soil (retain): " + varValue);
       }
     }
     else if (varName.equalsIgnoreCase("Rain")) {
       if (mqttClient.publish(TOPIC_RAIN, varValue.c_str(), true)) {
-        Serial.println("Publicado sensor/Rain (retain): " + varValue);
+        Serial.println("Published on sensor/Rain (retain): " + varValue);
       }
     }
   }
