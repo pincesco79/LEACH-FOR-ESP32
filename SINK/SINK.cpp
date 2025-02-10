@@ -18,7 +18,8 @@ const char* WIFI_PASSWORD = "4ndr0m3d4;1";
 const char* MQTT_SERVER   = "192.168.79.16";
 const int   MQTT_PORT     = 1883;
 const char* MQTT_USER     = "dayana";
-const char* MQTT_PASS     = "";
+const char* MQTT_PASS     = "12345";
+const char* MQTT_CLIENT_ID = "ESP32SinkClient";
 
 // Tópicos
 const char* TOPIC_TEMP  = "sensor/Temp";
@@ -28,6 +29,54 @@ const char* TOPIC_RAIN  = "sensor/Rain";
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+
+void setupWiFi();
+void reconnectMQTT();
+void publishSensorValues(String line);
+
+void setup() {
+  Serial.begin(9600);
+  delay(2000);
+
+  // Iniciar LoRa
+  if (!e220ttl.begin()) {
+    Serial.println("Error inicializando E220");
+    while(1);
+  }
+  Serial.println("Receptor LoRa listo.");
+
+  // WiFi + MQTT
+  setupWiFi();
+  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    // Podrías reconectar si deseas
+  }
+  if (!mqttClient.connected()) {
+    reconnectMQTT();
+  }
+  mqttClient.loop();
+
+  // Escuchar LoRa
+  ResponseContainer rc = e220ttl.receiveMessage();
+  if (rc.status.code == 1) {
+    String incoming = rc.data;
+    incoming.trim();
+    if (incoming.length() > 0) {
+      Serial.print("Datos recibidos: ");
+      Serial.println(incoming);
+      
+      // Ver si empieza con "Temp=" (o "Hum=", etc.)
+      if (incoming.startsWith("Temp=")) {
+        // Parseamos y publicamos con retain
+        publishSensorValues(incoming);
+      }
+    }
+  }
+  delay(10);
+}
 
 // ------------------ SETUP WIFI ------------------
 void setupWiFi() {
@@ -46,7 +95,7 @@ void setupWiFi() {
 void reconnectMQTT() {
   while (!mqttClient.connected()) {
     Serial.print("Intentando conexión MQTT... ");
-    if (mqttClient.connect("ESP32SinkClient", MQTT_USER, MQTT_PASS)) {
+    if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
       Serial.println("¡Conectado al broker!");
     } else {
       Serial.print("Fallo, rc=");
@@ -110,49 +159,5 @@ void publishSensorValues(String line) {
       }
     }
   }
-}
-
-void setup() {
-  Serial.begin(9600);
-  delay(2000);
-
-  // Iniciar LoRa
-  if (!e220ttl.begin()) {
-    Serial.println("Error inicializando E220");
-    while(1);
-  }
-  Serial.println("Receptor LoRa listo.");
-
-  // WiFi + MQTT
-  setupWiFi();
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-}
-
-void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    // Podrías reconectar si deseas
-  }
-  if (!mqttClient.connected()) {
-    reconnectMQTT();
-  }
-  mqttClient.loop();
-
-  // Escuchar LoRa
-  ResponseContainer rc = e220ttl.receiveMessage();
-  if (rc.status.code == 1) {
-    String incoming = rc.data;
-    incoming.trim();
-    if (incoming.length() > 0) {
-      Serial.print("Datos recibidos: ");
-      Serial.println(incoming);
-      
-      // Ver si empieza con "Temp=" (o "Hum=", etc.)
-      if (incoming.startsWith("Temp=")) {
-        // Parseamos y publicamos con retain
-        publishSensorValues(incoming);
-      }
-    }
-  }
-  delay(10);
 }
 
